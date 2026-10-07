@@ -1,0 +1,144 @@
+# Publica os DOIS pacotes NuGet do monitoramento — Bfocus.Monitor e Bfocus.Monitor.AspNetCore (que
+# depende do primeiro na mesma versão) — ao receber uma tag vX.Y.Z no espelho público
+# bernisoftware/bfocus-monitor-dotnet (o scripts/release-monitor.sh do monorepo empurra o conteúdo de
+# monitor/dotnet e a tag).
+#
+# Só publica com a suíte verde — no alvo máximo (net8.0, com o middleware ASP.NET Core), no mínimo
+# (netstandard2.0) e com um consumidor compilado e executado contra os .nupkg construídos — e com a tag
+# igual à <Version> dos dois csproj e a BfocusMonitor.Version. Os testes que comparam com o monorepo
+# (monitor/release.json e monitor/conformance/cases.json) pulam sozinhos aqui.
+#
+# Autenticação: Trusted Publishing (OIDC) do nuget.org, sem chave guardada — política em
+# nuget.org → (perfil) → Trusted Publishing: owner bernisoftware, repo bfocus-monitor-dotnet, workflow
+# publish.yml; variável da org NUGET_USER = nome do perfil. Se o secret NUGET_API_KEY existir
+# (escopo Push para Bfocus.*), ele é usado no lugar.
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  nuget:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Trusted Publishing (OIDC)
+    env:
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      NUGET_API_KEY_SECRET: ${{ secrets.NUGET_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Testes — net8.0 (alvo máximo, com o middleware ASP.NET Core)
+        run: dotnet test Bfocus.Monitor.sln -c Release
+
+      - name: Testes — netstandard2.0 (alvo mínimo)
+        run: dotnet test tests/Bfocus.Monitor.Tests/Bfocus.Monitor.Tests.csproj -c Release -p:BfocusTargetFramework=netstandard2.0
+
+      - name: Tag == versão dos pacotes
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CORE="$(grep -oPm1 '(?<=<Version>)[^<]+' src/Bfocus.Monitor/Bfocus.Monitor.csproj)"
+          ASP="$(grep -oPm1 '(?<=<Version>)[^<]+' src/Bfocus.Monitor.AspNetCore/Bfocus.Monitor.AspNetCore.csproj)"
+          CONST="$(grep -oP 'public const string Version = "\K[^"]+' src/Bfocus.Monitor/BfocusMonitor.cs)"
+          echo "tag=$TAG Bfocus.Monitor=$CORE Bfocus.Monitor.AspNetCore=$ASP BfocusMonitor.Version=$CONST"
+          if [ "$TAG" != "$CORE" ] || [ "$TAG" != "$ASP" ] || [ "$TAG" != "$CONST" ]; then
+            echo "::error::A tag v$TAG não bate com <Version> ($CORE / $ASP) / BfocusMonitor.Version \"$CONST\""
+            exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Pack (os dois)
+        run: |
+          dotnet pack src/Bfocus.Monitor/Bfocus.Monitor.csproj -c Release -o artifacts
+          dotnet pack src/Bfocus.Monitor.AspNetCore/Bfocus.Monitor.AspNetCore.csproj -c Release -o artifacts
+          ls -l artifacts
+
+      # O que vai dentro de cada .nupkg: os dois alvos do núcleo, o README e — no AspNetCore — a
+      # dependência do núcleo NA MESMA versão (senão um restore pegaria um núcleo de outra release).
+      - name: Conteúdo dos pacotes
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          core="artifacts/Bfocus.Monitor.$V.nupkg"; asp="artifacts/Bfocus.Monitor.AspNetCore.$V.nupkg"
+          for f in lib/netstandard2.0/Bfocus.Monitor.dll lib/net8.0/Bfocus.Monitor.dll README.md; do
+            unzip -l "$core" | grep -q " $f\$" || { echo "::error::$f fora de $core"; exit 1; }
+          done
+          for f in lib/net8.0/Bfocus.Monitor.AspNetCore.dll README.md; do
+            unzip -l "$asp" | grep -q " $f\$" || { echo "::error::$f fora de $asp"; exit 1; }
+          done
+          nuspec="$(unzip -p "$asp" Bfocus.Monitor.AspNetCore.nuspec)"
+          echo "$nuspec" | grep -q "<dependency id=\"Bfocus.Monitor\" version=\"$V\"" \
+            || { echo "::error::Bfocus.Monitor.AspNetCore não depende de Bfocus.Monitor $V"; echo "$nuspec"; exit 1; }
+          echo "$nuspec" | grep -q 'frameworkReference name="Microsoft.AspNetCore.App"' \
+            || { echo "::error::Bfocus.Monitor.AspNetCore sem a FrameworkReference Microsoft.AspNetCore.App"; exit 1; }
+          echo "pacotes ok: $V"
+
+      # Um app ASP.NET Core que só conhece os .nupkg (nenhuma referência ao fonte): restaura o
+      # AspNetCore — que traz o núcleo pela dependência —, compila e roda o básico da API pública.
+      - name: Consumidor contra os pacotes construídos
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          app="$RUNNER_TEMP/consumidor"; mkdir -p "$app"; cd "$app"
+          cat > Consumidor.csproj <<EOF
+          <Project Sdk="Microsoft.NET.Sdk.Web">
+            <PropertyGroup>
+              <TargetFramework>net8.0</TargetFramework>
+              <Nullable>enable</Nullable>
+              <ImplicitUsings>enable</ImplicitUsings>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="Bfocus.Monitor.AspNetCore" Version="[$V]" />
+            </ItemGroup>
+          </Project>
+          EOF
+          cat > Program.cs <<'EOF'
+          using Bfocus.Monitor;
+
+          var want = args[0];
+          if (BfocusMonitor.Version != want) { Console.Error.WriteLine($"BfocusMonitor.Version {BfocusMonitor.Version} != tag {want}"); return 1; }
+          try { BfocusMonitor.Init(new MonitorOptions { Key = " " }); Console.Error.WriteLine("Init aceitou chave vazia"); return 1; }
+          catch (ArgumentException) { }
+          BfocusMonitor.Init(new MonitorOptions { Key = "bf_mon_consumidor", BaseUrl = "http://127.0.0.1:9", AutoCapture = false });
+          var app = WebApplication.CreateBuilder(args).Build();
+          app.UseBfocusMonitor();
+          BfocusMonitor.Close();
+          Console.WriteLine($"pacotes publicados ok: {BfocusMonitor.Version}");
+          return 0;
+          EOF
+          dotnet restore --source "$GITHUB_WORKSPACE/artifacts" --source https://api.nuget.org/v3/index.json \
+            --packages "$RUNNER_TEMP/nuget-from-artifact"
+          dotnet run --no-restore -c Release -- "$V"
+
+      # Sem o secret: o NuGet/login troca o token OIDC do GitHub por uma chave de 1 h.
+      - name: Login no nuget.org (Trusted Publishing)
+        id: nuget-login
+        if: env.NUGET_API_KEY_SECRET == ''
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      # O núcleo primeiro: o AspNetCore depende dele. --skip-duplicate deixa rodar de novo depois de
+      # uma falha no meio (o que já subiu é pulado). O .snupkg (símbolos) vai junto de cada push.
+      - name: Publica no nuget.org
+        env:
+          NUGET_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY || secrets.NUGET_API_KEY }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          for pkg in Bfocus.Monitor Bfocus.Monitor.AspNetCore; do
+            dotnet nuget push "artifacts/$pkg.$V.nupkg" \
+              --api-key "$NUGET_KEY" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done

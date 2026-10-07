@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <AssemblyName>Bfocus.Monitor</AssemblyName>
+    <RootNamespace>Bfocus.Monitor</RootNamespace>
+
+    <!-- Pacote NuGet. A versão existe aqui E em BfocusMonitor.Version; a suíte trava que sejam iguais
+         (e monitor/release.json é a versão de todos os pacotes de monitoramento). -->
+    <PackageId>Bfocus.Monitor</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Berni Software</Authors>
+    <Company>Berni Software</Company>
+    <Product>bFocus</Product>
+    <Copyright>Copyright (c) Berni Software</Copyright>
+    <Description>Monitoramento de erros do bFocus para .NET: captura os erros não tratados do sistema (AppDomain, tarefas, ASP.NET Core) e manda para o bFocus, onde o mesmo erro é agrupado entre todos os clientes e vira demanda para a equipe. Sem dependências.</Description>
+    <PackageTags>bfocus;monitor;errors;crash-reporting;error-tracking;aspnetcore;berni</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/bernisoftware/bfocus-monitor-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/bernisoftware/bfocus-monitor-dotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <!-- ZERO dependência de pacote: JSON escrito à mão (Internal/Json.cs), HttpClient e HMAC da BCL.
+       A integração ASP.NET Core mora no pacote Bfocus.Monitor.AspNetCore: assim um console/worker que usa
+       só este pacote não passa a exigir o framework compartilhado do ASP.NET Core para rodar. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bfocus.Monitor.Tests" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+
+</Project>

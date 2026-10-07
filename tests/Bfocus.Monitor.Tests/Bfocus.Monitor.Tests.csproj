@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>Bfocus.Monitor.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Dois modos:
+      dotnet test                                                       pacote compilado para net8.0 (+ ASP.NET Core)
+      dotnet test tests/Bfocus.Monitor.Tests -p:BfocusTargetFramework=netstandard2.0
+                                                                        o build netstandard2.0 (alvo mínimo; sem os
+                                                                        testes do middleware, que é só net8.0)
+    Máquina só com o runtime 10: DOTNET_ROLL_FORWARD=Major dotnet test
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(BfocusTargetFramework)' == ''">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/Bfocus.Monitor/Bfocus.Monitor.csproj" />
+    <ProjectReference Include="../../src/Bfocus.Monitor.AspNetCore/Bfocus.Monitor.AspNetCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(BfocusTargetFramework)' != ''">
+    <ProjectReference Include="../../src/Bfocus.Monitor/Bfocus.Monitor.csproj" SetTargetFramework="TargetFramework=$(BfocusTargetFramework)" />
+    <Compile Remove="AspNetCoreTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Cópia de monitor/conformance/cases.json (gerada por monitor/conformance/generate.py, que também confere). -->
+    <None Include="cases.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
