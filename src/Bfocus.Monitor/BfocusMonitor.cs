@@ -15,7 +15,7 @@ namespace Bfocus.Monitor;
 public static class BfocusMonitor
 {
     /// <summary>Versão deste pacote (a mesma do .csproj — um teste trava).</summary>
-    public const string Version = "0.1.0";
+    public const string Version = "0.1.1";
 
     /// <summary>Nome no campo <c>sdk.name</c> e no header <c>X-bFocus-Client</c>.</summary>
     public const string SdkName = "bfocus-monitor-dotnet";

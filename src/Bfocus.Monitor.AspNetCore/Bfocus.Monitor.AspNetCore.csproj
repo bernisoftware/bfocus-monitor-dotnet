@@ -7,7 +7,7 @@
 
     <!-- Mesma versão do Bfocus.Monitor (um teste trava). -->
     <PackageId>Bfocus.Monitor.AspNetCore</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Berni Software</Authors>
     <Company>Berni Software</Company>
     <Product>bFocus</Product>
