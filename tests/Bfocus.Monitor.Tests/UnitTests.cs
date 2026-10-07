@@ -160,8 +160,8 @@ public class UnitTests : IDisposable
         BfocusMonitor.CaptureException(ConformanceTests.Thrown("Boom", "x"));
         Assert.True(BfocusMonitor.Flush(TimeSpan.FromSeconds(5)));
         var req = Assert.Single(server.Requests);
-        Assert.Equal("bfocus-monitor-dotnet/0.1.0", req.Header("X-bFocus-Client"));
-        Assert.Equal("bfocus-monitor-dotnet/0.1.0", req.Header("User-Agent"));
+        Assert.Equal("bfocus-monitor-dotnet/" + BfocusMonitor.Version, req.Header("X-bFocus-Client"));
+        Assert.Equal("bfocus-monitor-dotnet/" + BfocusMonitor.Version, req.Header("User-Agent"));
         Assert.Equal("application/json", req.Header("Content-Type"));
         Assert.Equal("/api/v1/monitor/events", req.Path); // barra final do BaseUrl não duplica
         var ev = req.Events[0]!;
